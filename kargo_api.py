@@ -100,6 +100,26 @@ CITY_CONNECTIONS = {
 }
 
 
+_CITY_REPLACE = str.maketrans({
+    "ı": "i", "İ": "I", "ğ": "g", "Ğ": "G", "ü": "u", "Ü": "U",
+    "ş": "s", "Ş": "S", "ö": "o", "Ö": "O", "ç": "c", "Ç": "C",
+})
+
+
+def _norm_city(value):
+    return (value or "").strip().translate(_CITY_REPLACE).lower()
+
+
+def _build_city_index():
+    all_cities = set(TURKISH_CITIES) | set(CITY_CONNECTIONS.keys())
+    for neighbors in CITY_CONNECTIONS.values():
+        all_cities.update(neighbors)
+    index = {}
+    for city in all_cities:
+        index[_norm_city(city)] = city
+    return index
+
+
 def get_cities():
     """Tum sehirleri dondurur"""
     return sorted(TURKISH_CITIES)
@@ -107,11 +127,12 @@ def get_cities():
 
 def calculate_route(start_city, end_city):
     """Iki sehir arasinda guzergahi hesaplar"""
+    city_index = _build_city_index()
+    start_city = city_index.get(_norm_city(start_city), (start_city or "").strip())
+    end_city = city_index.get(_norm_city(end_city), (end_city or "").strip())
+
     if start_city == end_city:
         return [start_city]
-    
-    start_city = start_city.strip()
-    end_city = end_city.strip()
     
     visited = set()
     queue = [[start_city]]
@@ -204,12 +225,28 @@ def calculate_shipping_price(weight_kg, volume_cm3, route, delivery_type="Adrese
     billable = max(weight, desi)
     distance_km = calculate_distance_km(route)
 
-    base_price = 35
-    billable_cost = billable * 18
-    distance_cost = distance_km * 0.12
-    delivery_surcharge = 15 if delivery_type == "Adrese Teslim" else 0
+    # Aras benzeri mock tarife: desi/agirlik kademesi + bolge mesafe farki
+    if billable <= 1:
+        base_price = 74
+    elif billable <= 5:
+        base_price = 94
+    elif billable <= 10:
+        base_price = 119
+    elif billable <= 20:
+        base_price = 169
+    else:
+        base_price = 219 + ((billable - 20) * 6)
 
-    total = round(base_price + billable_cost + distance_cost + delivery_surcharge, 2)
+    if distance_km <= 300:
+        distance_multiplier = 1.00
+    elif distance_km <= 700:
+        distance_multiplier = 1.18
+    else:
+        distance_multiplier = 1.35
+
+    delivery_surcharge = 18 if delivery_type == "Adrese Teslim" else 0
+
+    total = round((base_price * distance_multiplier) + delivery_surcharge, 2)
     return {
         "price": total,
         "desi": desi,

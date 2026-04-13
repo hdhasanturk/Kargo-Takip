@@ -155,6 +155,7 @@ def shipment_detail_view(page: ft.Page, tracking_number: str, user: dict = None)
                 ft.Text(f"Desi: {shipment.get('desi', 0)}", size=14),
                 ft.Text(f"Mesafe: {shipment.get('distance_km', 0)} km", size=14),
                 ft.Text(f"Teslim Tipi: {shipment.get('delivery_type', '-')}", size=14),
+                ft.Text(f"Kayit Tipi: {shipment.get('party_type', '-')}", size=14),
                 ft.Text(f"Not: {shipment.get('shipment_note') or '-'}", size=12, color="gray"),
                 ft.Container(height=20),
                 

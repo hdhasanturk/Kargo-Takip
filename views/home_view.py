@@ -13,6 +13,7 @@ def home_view(page: ft.Page, user: dict = None):
     shipments_container = ft.Column([])
     
     def logout(e):
+        page.current_user = None
         page.go("/login")
     
     def go_to_add(e):
@@ -63,6 +64,11 @@ def home_view(page: ft.Page, user: dict = None):
                             ),
                             ft.Text(
                                 f"Teslim Tipi: {s.get('delivery_type', '-')}",
+                                size=12,
+                                color="gray",
+                            ),
+                            ft.Text(
+                                f"Kayit Tipi: {s.get('party_type', '-')}",
                                 size=12,
                                 color="gray",
                             ),

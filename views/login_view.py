@@ -12,10 +12,6 @@ def login_view(page: ft.Page):
     
     PRIMARY_COLOR = "#2196F3"
     
-    def go_home():
-        from views.home_view import home_view
-        home_view(page, page.current_user)
-    
     def handle_login(e):
         username = username_field.value
         password = password_field.value
@@ -30,7 +26,7 @@ def login_view(page: ft.Page):
         
         if user:
             page.current_user = user
-            go_home()
+            page.go("/home")
         else:
             error_text.value = "Kullanici adi veya sifre hatali."
             error_text.visible = True

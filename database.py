@@ -67,6 +67,7 @@ def _ensure_shipment_columns(cursor):
         "shipment_note": "TEXT DEFAULT ''",
         "distance_km": "REAL DEFAULT 0",
         "desi": "REAL DEFAULT 0",
+        "party_type": "TEXT DEFAULT 'gonderici'",
     }
 
     for column_name, column_type in required_columns.items():
@@ -114,7 +115,7 @@ def verify_user(username, password):
 def add_shipment(sender_name, sender_phone, sender_address, sender_city,
                  receiver_name, receiver_phone, receiver_address, receiver_city,
                  weight, volume, price, payment_price, route, delivery_type="Adrese Teslim",
-                 shipment_note="", distance_km=0, desi=0):
+                 shipment_note="", distance_km=0, desi=0, party_type="gonderici"):
     tracking_number = generate_tracking_number()
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     
@@ -125,12 +126,12 @@ def add_shipment(sender_name, sender_phone, sender_address, sender_city,
            (tracking_number, sender_name, sender_phone, sender_address, sender_city,
             receiver_name, receiver_phone, receiver_address, receiver_city,
             weight, volume, price, payment_price, status, route, created_date, last_update,
-            delivery_type, shipment_note, distance_km, desi)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            delivery_type, shipment_note, distance_km, desi, party_type)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (tracking_number, sender_name, sender_phone, sender_address, sender_city,
          receiver_name, receiver_phone, receiver_address, receiver_city,
          weight, volume, price, payment_price, "Hazirlaniyor", route, now, now,
-         delivery_type, shipment_note, distance_km, desi)
+         delivery_type, shipment_note, distance_km, desi, party_type)
     )
     conn.commit()
     conn.close()

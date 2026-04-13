@@ -39,9 +39,9 @@ def register_view(page: ft.Page):
     )
     
     def handle_register(e):
-        username = username_field.value
-        password = password_field.value
-        confirm_password = confirm_password_field.value
+        username = (username_field.value or "").strip()
+        password = password_field.value or ""
+        confirm_password = confirm_password_field.value or ""
         
         # Alanları kontrol et
         if not username or not password or not confirm_password:
@@ -67,8 +67,15 @@ def register_view(page: ft.Page):
             page.update()
             return
         
-        # Veritabanında kullanıcı oluştur
-        result = create_user(username, password, username)
+        # Veritabaninda kullanici olustur
+        try:
+            result = create_user(username, password, username)
+        except Exception:
+            error_text.value = "Kayit sirasinda beklenmeyen bir hata olustu."
+            error_text.visible = True
+            success_text.visible = False
+            page.update()
+            return
         
         if result:
             success_text.value = "Kayıt başarılı! Giriş yapabilirsiniz."

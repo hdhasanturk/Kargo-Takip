@@ -22,7 +22,6 @@ def add_shipment_view(page: ft.Page, user: dict = None):
         label="Gonderici Sehir",
         width=300,
         options=city_options,
-        on_change=lambda e: update_pricing(),
     )
     
     receiver_name = ft.TextField(label="Alici Adi", width=300)
@@ -32,7 +31,6 @@ def add_shipment_view(page: ft.Page, user: dict = None):
         label="Alici Sehir",
         width=300,
         options=city_options,
-        on_change=lambda e: update_pricing(),
     )
     
     sender_type = ft.Dropdown(
@@ -44,8 +42,8 @@ def add_shipment_view(page: ft.Page, user: dict = None):
             ft.dropdown.Option("alici", "Alici"),
         ],
     )
-    weight = ft.TextField(label="Agirlik (kg)", width=300, on_change=lambda e: update_pricing())
-    volume = ft.TextField(label="Desi Hacmi (cm3)", width=300, on_change=lambda e: update_pricing())
+    weight = ft.TextField(label="Agirlik (kg)", width=300)
+    volume = ft.TextField(label="Desi Hacmi (cm3)", width=300)
     desi_text = ft.Text("Desi: 0", size=12, color="gray")
     distance_text = ft.Text("Mesafe: 0 km", size=12, color="gray")
     price = ft.TextField(label="Kargo Ucreti (TL) - Otomatik", width=300, read_only=True)
@@ -58,13 +56,31 @@ def add_shipment_view(page: ft.Page, user: dict = None):
             ft.dropdown.Option("Adrese Teslim", "Adrese Teslim"),
             ft.dropdown.Option("Subeden Teslim Al", "Subeden Teslim Al"),
         ],
-        on_change=lambda e: update_pricing(),
     )
     shipment_note = ft.TextField(label="Kargo Notu", width=300, multiline=True)
     
     route_preview = ft.Text("", size=12, color="gray", visible=False)
     
     result_text = ft.Text("", visible=False, color="green")
+
+    def _digits_only(value):
+        return "".join(ch for ch in (value or "") if ch.isdigit())
+
+    def _normalize_phone_fields():
+        sender_clean = _digits_only(sender_phone.value)
+        receiver_clean = _digits_only(receiver_phone.value)
+        changed = False
+        if sender_phone.value != sender_clean:
+            sender_phone.value = sender_clean
+            changed = True
+        if receiver_phone.value != receiver_clean:
+            receiver_phone.value = receiver_clean
+            changed = True
+        if changed:
+            page.update()
+
+    sender_phone.on_change = lambda e: _normalize_phone_fields()
+    receiver_phone.on_change = lambda e: _normalize_phone_fields()
 
     def update_pricing():
         if not sender_city.value or not receiver_city.value:
@@ -76,17 +92,53 @@ def add_shipment_view(page: ft.Page, user: dict = None):
         distance_text.value = f"Mesafe: {calc['distance_km']} km"
         route_preview.value = f"Guzergah: {' -> '.join(route)}"
         route_preview.visible = True
+
+    sender_city.on_change = lambda e: update_pricing()
+    receiver_city.on_change = lambda e: update_pricing()
+    delivery_type.on_change = lambda e: update_pricing()
+    weight.on_change = lambda e: update_pricing()
+    volume.on_change = lambda e: update_pricing()
     
     def save_cargo(e):
-        if not sender_name.value or not receiver_name.value:
-            result_text.value = "Gonderici ve alici adi zorunludur!"
+        _normalize_phone_fields()
+
+        sender_name_val = (sender_name.value or "").strip()
+        receiver_name_val = (receiver_name.value or "").strip()
+        sender_phone_val = _digits_only(sender_phone.value)
+        receiver_phone_val = _digits_only(receiver_phone.value)
+        sender_address_val = (sender_address.value or "").strip()
+        receiver_address_val = (receiver_address.value or "").strip()
+
+        if not sender_name_val or not receiver_name_val:
+            result_text.value = "Gonderici ve alici adi zorunludur."
+            result_text.color = "red"
+            result_text.visible = True
+            page.update()
+            return
+
+        if not sender_phone_val or not receiver_phone_val:
+            result_text.value = "Gonderici ve alici telefon zorunludur."
+            result_text.color = "red"
+            result_text.visible = True
+            page.update()
+            return
+
+        if len(sender_phone_val) != 10 or len(receiver_phone_val) != 10:
+            result_text.value = "Telefonlar 10 haneli olmali (5XXXXXXXXX)."
             result_text.color = "red"
             result_text.visible = True
             page.update()
             return
         
         if not sender_city.value or not receiver_city.value:
-            result_text.value = "Gonderici ve alici sehri secin!"
+            result_text.value = "Gonderici ve alici sehri secin."
+            result_text.color = "red"
+            result_text.visible = True
+            page.update()
+            return
+
+        if delivery_type.value == "Adrese Teslim" and (not sender_address_val or not receiver_address_val):
+            result_text.value = "Adrese teslim secildiginde gonderici ve alici adresi zorunludur."
             result_text.color = "red"
             result_text.visible = True
             page.update()
@@ -97,9 +149,16 @@ def add_shipment_view(page: ft.Page, user: dict = None):
             v = float(volume.value) if volume.value else 0
             update_pricing()
             p = float(price.value) if price.value else 0
-            pp = float(payment_price.value) if payment_price.value else 0
+            pp = float(payment_price.value) if payment_price.value else p
         except ValueError:
             result_text.value = "Sayisal alanlari duzgun girin!"
+            result_text.color = "red"
+            result_text.visible = True
+            page.update()
+            return
+
+        if w <= 0 or v <= 0:
+            result_text.value = "Agirlik ve desi hacmi sifirdan buyuk olmali."
             result_text.color = "red"
             result_text.visible = True
             page.update()
@@ -110,19 +169,20 @@ def add_shipment_view(page: ft.Page, user: dict = None):
         calc = calculate_shipping_price(w, v, route, delivery_type.value)
         
         tracking = add_shipment(
-            sender_name.value,
-            sender_phone.value or "",
-            sender_address.value or "",
+            sender_name_val,
+            sender_phone_val,
+            sender_address_val,
             sender_city.value,
-            receiver_name.value,
-            receiver_phone.value or "",
-            receiver_address.value or "",
+            receiver_name_val,
+            receiver_phone_val,
+            receiver_address_val,
             receiver_city.value,
             w, v, p, pp, route_str,
             delivery_type.value,
             shipment_note.value or "",
             calc["distance_km"],
             calc["desi"],
+            sender_type.value,
         )
         
         party_label = "Gonderici" if sender_type.value == "gonderici" else "Alici"
@@ -177,6 +237,7 @@ def add_shipment_view(page: ft.Page, user: dict = None):
                 ft.Text("GONDERICI BILGILERI", size=16, weight=ft.FontWeight.BOLD, color="gray"),
                 sender_name,
                 sender_phone,
+                ft.Text("Sadece rakam girin (10 hane).", size=11, color="gray"),
                 sender_city,
                 sender_address,
                 ft.Container(height=20),
@@ -184,6 +245,7 @@ def add_shipment_view(page: ft.Page, user: dict = None):
                 ft.Text("ALICI BILGILERI", size=16, weight=ft.FontWeight.BOLD, color="gray"),
                 receiver_name,
                 receiver_phone,
+                ft.Text("Sadece rakam girin (10 hane).", size=11, color="gray"),
                 receiver_city,
                 receiver_address,
                 route_preview,
