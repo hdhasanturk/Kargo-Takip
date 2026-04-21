@@ -2,6 +2,8 @@
 Kargo Guzergah Sistemi - Mock API
 Bu sistem sehirler arasi guzergahi hesaplar
 """
+import json
+from pathlib import Path
 
 TURKISH_CITIES = [
     "Izmir", "Istanbul", "Ankara", "Antalya", "Bursa", "Eskisehir",
@@ -105,6 +107,14 @@ _CITY_REPLACE = str.maketrans({
     "ş": "s", "Ş": "S", "ö": "o", "Ö": "O", "ç": "c", "Ç": "C",
 })
 
+LOCATION_DATA_PATH = (
+    Path(__file__).resolve().parent
+    / "turkiye-city-county-district-neighborhood-main"
+    / "data.json"
+)
+_LOCATION_DATA = None
+_LOCATION_INDEX = None
+
 
 def _norm_city(value):
     return (value or "").strip().translate(_CITY_REPLACE).lower()
@@ -118,6 +128,74 @@ def _build_city_index():
     for city in all_cities:
         index[_norm_city(city)] = city
     return index
+
+
+def _resolve_city_name(city):
+    city_index = _build_city_index()
+    return city_index.get(_norm_city(city), (city or "").strip())
+
+
+def _load_location_data():
+    global _LOCATION_DATA
+    if _LOCATION_DATA is None:
+        try:
+            with open(LOCATION_DATA_PATH, "r", encoding="utf-8") as f:
+                _LOCATION_DATA = json.load(f)
+        except FileNotFoundError:
+            _LOCATION_DATA = []
+    return _LOCATION_DATA
+
+
+def _build_location_index():
+    global _LOCATION_INDEX
+    if _LOCATION_INDEX is not None:
+        return _LOCATION_INDEX
+
+    _LOCATION_INDEX = {}
+    for city in _load_location_data():
+        city_name = city.get("name", "")
+        _LOCATION_INDEX[_norm_city(city_name)] = city
+    return _LOCATION_INDEX
+
+
+def _default_districts_for_city(city):
+    return [f"{city} Merkez", "Yeni Ilce", "Cumhuriyet Ilcesi"]
+
+
+def _default_neighborhoods_for_district(district):
+    return [f"{district} Merkez", f"{district} Yeni Mahalle", f"{district} Cumhuriyet"]
+
+
+def get_districts_by_city(city):
+    city_data = _build_location_index().get(_norm_city(city))
+    if not city_data:
+        resolved_city = _resolve_city_name(city)
+        return _default_districts_for_city(resolved_city)
+
+    districts = []
+    for county in city_data.get("counties", []):
+        for district in county.get("districts", []):
+            district_name = district.get("name")
+            if district_name and district_name not in districts:
+                districts.append(district_name)
+    return districts or _default_districts_for_city(city)
+
+
+def get_neighborhoods_by_city_and_district(city, district):
+    city_data = _build_location_index().get(_norm_city(city))
+    if city_data:
+        target = _norm_city(district)
+        neighborhoods = []
+        for county in city_data.get("counties", []):
+            for district_item in county.get("districts", []):
+                if _norm_city(district_item.get("name")) == target:
+                    for neighborhood in district_item.get("neighborhoods", []):
+                        neighborhood_name = neighborhood.get("name")
+                        if neighborhood_name and neighborhood_name not in neighborhoods:
+                            neighborhoods.append(neighborhood_name)
+        if neighborhoods:
+            return neighborhoods
+    return _default_neighborhoods_for_district(district)
 
 
 def get_cities():

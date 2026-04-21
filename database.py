@@ -68,6 +68,8 @@ def _ensure_shipment_columns(cursor):
         "distance_km": "REAL DEFAULT 0",
         "desi": "REAL DEFAULT 0",
         "party_type": "TEXT DEFAULT 'gonderici'",
+        "sender_district": "TEXT DEFAULT ''",
+        "sender_neighborhood": "TEXT DEFAULT ''",
     }
 
     for column_name, column_type in required_columns.items():
@@ -115,7 +117,8 @@ def verify_user(username, password):
 def add_shipment(sender_name, sender_phone, sender_address, sender_city,
                  receiver_name, receiver_phone, receiver_address, receiver_city,
                  weight, volume, price, payment_price, route, delivery_type="Adrese Teslim",
-                 shipment_note="", distance_km=0, desi=0, party_type="gonderici"):
+                 shipment_note="", distance_km=0, desi=0, party_type="gonderici",
+                 sender_district="", sender_neighborhood=""):
     tracking_number = generate_tracking_number()
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     
@@ -126,12 +129,12 @@ def add_shipment(sender_name, sender_phone, sender_address, sender_city,
            (tracking_number, sender_name, sender_phone, sender_address, sender_city,
             receiver_name, receiver_phone, receiver_address, receiver_city,
             weight, volume, price, payment_price, status, route, created_date, last_update,
-            delivery_type, shipment_note, distance_km, desi, party_type)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            delivery_type, shipment_note, distance_km, desi, party_type, sender_district, sender_neighborhood)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (tracking_number, sender_name, sender_phone, sender_address, sender_city,
          receiver_name, receiver_phone, receiver_address, receiver_city,
          weight, volume, price, payment_price, "Hazirlaniyor", route, now, now,
-         delivery_type, shipment_note, distance_km, desi, party_type)
+         delivery_type, shipment_note, distance_km, desi, party_type, sender_district, sender_neighborhood)
     )
     conn.commit()
     conn.close()

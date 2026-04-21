@@ -129,6 +129,8 @@ def shipment_detail_view(page: ft.Page, tracking_number: str, user: dict = None)
                 ft.Text("GONDERICI", size=16, weight=ft.FontWeight.BOLD, color="gray"),
                 ft.Text(f"Ad: {shipment['sender_name']}", size=14),
                 ft.Text(f"Sehir: {shipment['sender_city']}", size=14),
+                ft.Text(f"Ilce: {shipment.get('sender_district') or '-'}", size=12),
+                ft.Text(f"Mahalle: {shipment.get('sender_neighborhood') or '-'}", size=12),
                 ft.Text(f"Telefon: {shipment['sender_phone'] or '-'}", size=12),
                 ft.Text(f"Adres: {shipment['sender_address'] or '-'}", size=12),
                 ft.Container(height=15),
