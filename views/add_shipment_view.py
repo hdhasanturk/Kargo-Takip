@@ -1,13 +1,14 @@
 import flet as ft
-import re
+
 from database import add_shipment
 from kargo_api import (
-    get_cities,
     calculate_route,
-    format_route,
     calculate_shipping_price,
-    get_districts_by_city,
-    get_neighborhoods_by_city_and_district,
+    format_route,
+    get_cities,
+    get_counties_by_city,
+    get_districts_by_county,
+    get_neighborhoods_by_district,
 )
 from views.home_view import home_view
 
@@ -16,35 +17,28 @@ def add_shipment_view(page: ft.Page, user: dict = None):
     page.title = "Yeni Kargo Ekle"
     page.clean()
     page.scroll = ft.ScrollMode.AUTO
-    
+
     cities = get_cities()
-    city_options = [ft.dropdown.Option(c) for c in cities]
-    
+    city_options = [ft.dropdown.Option(city) for city in cities]
+
     def go_back(e):
         home_view(page, user)
-    
+
     sender_name = ft.TextField(label="Gonderici Adi", width=300)
     sender_phone = ft.TextField(label="Gonderici Telefon", width=300)
     sender_name_error = ft.Text("", size=11, color="red", visible=False)
     sender_phone_error = ft.Text("", size=11, color="red", visible=False)
     sender_address = ft.TextField(label="Gonderici Adres", width=300, multiline=True)
-    sender_city = ft.Dropdown(
-        label="Gonderici Sehir",
-        width=300,
-        options=city_options,
-    )
-    sender_district = ft.Dropdown(label="Gonderici Ilce", width=300, options=[])
+    sender_city = ft.Dropdown(label="Gonderici Sehir", width=300, options=city_options)
+    sender_county = ft.Dropdown(label="Gonderici Ilce", width=300, options=[])
+    sender_bucak = ft.Dropdown(label="Gonderici Bucak", width=300, options=[])
     sender_neighborhood = ft.Dropdown(label="Gonderici Mahalle", width=300, options=[])
-    
+
     receiver_name = ft.TextField(label="Alici Adi", width=300)
     receiver_phone = ft.TextField(label="Alici Telefon", width=300)
     receiver_address = ft.TextField(label="Alici Adres", width=300, multiline=True)
-    receiver_city = ft.Dropdown(
-        label="Alici Sehir",
-        width=300,
-        options=city_options,
-    )
-    
+    receiver_city = ft.Dropdown(label="Alici Sehir", width=300, options=city_options)
+
     sender_type = ft.Dropdown(
         label="Kayit Tipi",
         width=300,
@@ -70,106 +64,126 @@ def add_shipment_view(page: ft.Page, user: dict = None):
         ],
     )
     shipment_note = ft.TextField(label="Kargo Notu", width=300, multiline=True)
-    
+
     route_preview = ft.Text("", size=12, color="gray", visible=False)
-    
     result_text = ft.Text("", visible=False, color="green")
+
+    def _digits_only(value):
+        return "".join(ch for ch in (value or "") if ch.isdigit())
+
+    def _is_valid_full_name(value):
+        parts = [part for part in value.split() if part]
+        if len(parts) < 2:
+            return False
+        return all(part.replace("-", "").isalpha() for part in parts)
 
     def _validate_sender_name_inline():
         value = (sender_name.value or "").strip()
-        # Ad-soyad zorunlu, sadece harf ve bosluk kabul.
-        is_valid = bool(re.fullmatch(r"[A-Za-zCĞİÖŞÜçğıöşü\s]+", value)) and len(value.split()) >= 2
         if not value:
             sender_name_error.value = "Gonderici adi bos birakilamaz."
             sender_name_error.visible = True
             return False
-        if not is_valid:
+        if not _is_valid_full_name(value):
             sender_name_error.value = "Gecerli bir ad soyad girin (sayi kullanmayin)."
             sender_name_error.visible = True
             return False
         sender_name_error.visible = False
         return True
 
-    def _digits_only(value):
-        return "".join(ch for ch in (value or "") if ch.isdigit())
-
     def _normalize_phone_fields():
         sender_clean = _digits_only(sender_phone.value)[:10]
-        receiver_clean = _digits_only(receiver_phone.value)
+        receiver_clean = _digits_only(receiver_phone.value)[:10]
         changed = False
+
         if sender_phone.value != sender_clean:
             sender_phone.value = sender_clean
             changed = True
         if receiver_phone.value != receiver_clean:
             receiver_phone.value = receiver_clean
             changed = True
-        if changed:
-            page.update()
 
         sender_phone_error.visible = False
 
-    sender_phone.on_change = lambda e: _normalize_phone_fields()
-    receiver_phone.on_change = lambda e: _normalize_phone_fields()
-    sender_name.on_change = lambda e: _validate_sender_name_inline()
+        if changed:
+            page.update()
+
+    def _event_value(e):
+        data_value = getattr(e, "data", None)
+        control_value = getattr(e.control, "value", None)
+        return data_value if data_value not in (None, "") else control_value
 
     def update_pricing():
         if not sender_city.value or not receiver_city.value:
             return
+
         route = calculate_route(sender_city.value, receiver_city.value)
-        calc = calculate_shipping_price(weight.value or 0, volume.value or 0, route, delivery_type.value)
+        calc = calculate_shipping_price(
+            weight.value or 0,
+            volume.value or 0,
+            route,
+            delivery_type.value,
+        )
         price.value = str(calc["price"])
         desi_text.value = f"Desi: {calc['desi']}"
         distance_text.value = f"Mesafe: {calc['distance_km']} km"
         route_preview.value = f"Guzergah: {' -> '.join(route)}"
         route_preview.visible = True
-
-    def _event_value(e):
-        data_value = getattr(e, "data", None)
-        control_value = getattr(e.control, "value", None)
-        return (data_value if data_value not in (None, "") else control_value)
+        page.update()
 
     def update_sender_location_options(selected_city=None):
         selected_city = selected_city or sender_city.value
-        districts = get_districts_by_city(selected_city)
-        sender_district.options.clear()
-        for district in districts:
-            sender_district.options.append(ft.dropdown.Option(district))
-        sender_district.value = None
-        sender_neighborhood.options.clear()
+        counties = get_counties_by_city(selected_city)
+        sender_county.options = [ft.dropdown.Option(county) for county in counties]
+        sender_county.value = None
+        sender_bucak.options = []
+        sender_bucak.value = None
+        sender_neighborhood.options = []
         sender_neighborhood.value = None
-        sender_district.update()
+        sender_county.update()
+        sender_bucak.update()
         sender_neighborhood.update()
-        page.update()
 
-    def update_sender_neighborhood_options(selected_city=None, selected_district=None):
+    def update_sender_bucak_options(selected_city=None, selected_county=None):
         selected_city = selected_city or sender_city.value
-        selected_district = selected_district or sender_district.value
-        neighborhoods = get_neighborhoods_by_city_and_district(selected_city, selected_district)
-        sender_neighborhood.options.clear()
-        for neighborhood in neighborhoods:
-            sender_neighborhood.options.append(ft.dropdown.Option(neighborhood))
+        selected_county = selected_county or sender_county.value
+        bucaklar = get_districts_by_county(selected_city, selected_county)
+        sender_bucak.options = [ft.dropdown.Option(bucak) for bucak in bucaklar]
+        sender_bucak.value = None
+        sender_neighborhood.options = []
+        sender_neighborhood.value = None
+        sender_bucak.update()
+        sender_neighborhood.update()
+
+    def update_sender_neighborhood_options(selected_city=None, selected_county=None, selected_bucak=None):
+        selected_city = selected_city or sender_city.value
+        selected_county = selected_county or sender_county.value
+        selected_bucak = selected_bucak or sender_bucak.value
+        neighborhoods = get_neighborhoods_by_district(selected_city, selected_county, selected_bucak)
+        sender_neighborhood.options = [
+            ft.dropdown.Option(neighborhood) for neighborhood in neighborhoods
+        ]
         sender_neighborhood.value = None
         sender_neighborhood.update()
-        page.update()
 
     def sender_city_changed(e):
-        selected_city = _event_value(e)
-        sender_city.value = selected_city
+        selected_city = sender_city.value
+        if not selected_city:
+            return
         update_pricing()
         update_sender_location_options(selected_city)
 
-    def sender_district_changed(e):
-        selected_district = _event_value(e)
-        sender_district.value = selected_district
-        update_sender_neighborhood_options(sender_city.value, selected_district)
+    def sender_county_changed(e):
+        selected_county = sender_county.value
+        if not selected_county:
+            return
+        update_sender_bucak_options(sender_city.value, selected_county)
 
-    sender_city.on_change = sender_city_changed
-    sender_district.on_change = sender_district_changed
-    receiver_city.on_change = lambda e: update_pricing()
-    delivery_type.on_change = lambda e: update_pricing()
-    weight.on_change = lambda e: update_pricing()
-    volume.on_change = lambda e: update_pricing()
-    
+    def sender_bucak_changed(e):
+        selected_bucak = sender_bucak.value
+        if not selected_bucak:
+            return
+        update_sender_neighborhood_options(sender_city.value, sender_county.value, selected_bucak)
+
     def save_cargo(e):
         _normalize_phone_fields()
         sender_name_ok = _validate_sender_name_inline()
@@ -210,7 +224,7 @@ def add_shipment_view(page: ft.Page, user: dict = None):
             result_text.visible = True
             page.update()
             return
-        
+
         if not sender_city.value or not receiver_city.value:
             result_text.value = "Gonderici ve alici sehri secin."
             result_text.color = "red"
@@ -218,26 +232,28 @@ def add_shipment_view(page: ft.Page, user: dict = None):
             page.update()
             return
 
-        if not sender_district.value or not sender_neighborhood.value:
-            result_text.value = "Gonderici icin ilce ve mahalle secimi zorunludur."
+        if not sender_county.value or not sender_bucak.value or not sender_neighborhood.value:
+            result_text.value = "Gonderici icin ilce, bucak ve mahalle secimi zorunludur."
             result_text.color = "red"
             result_text.visible = True
             page.update()
             return
 
-        if delivery_type.value == "Adrese Teslim" and (not sender_address_val or not receiver_address_val):
+        if delivery_type.value == "Adrese Teslim" and (
+            not sender_address_val or not receiver_address_val
+        ):
             result_text.value = "Adrese teslim secildiginde gonderici ve alici adresi zorunludur."
             result_text.color = "red"
             result_text.visible = True
             page.update()
             return
-        
+
         try:
-            w = float(weight.value) if weight.value else 0
-            v = float(volume.value) if volume.value else 0
+            weight_value = float(weight.value) if weight.value else 0
+            volume_value = float(volume.value) if volume.value else 0
             update_pricing()
-            p = float(price.value) if price.value else 0
-            pp = float(payment_price.value) if payment_price.value else p
+            price_value = float(price.value) if price.value else 0
+            payment_value = float(payment_price.value) if payment_price.value else price_value
         except ValueError:
             result_text.value = "Sayisal alanlari duzgun girin!"
             result_text.color = "red"
@@ -245,36 +261,52 @@ def add_shipment_view(page: ft.Page, user: dict = None):
             page.update()
             return
 
-        if w <= 0 or v <= 0:
+        if weight_value <= 0 or volume_value <= 0:
             result_text.value = "Agirlik ve desi hacmi sifirdan buyuk olmali."
             result_text.color = "red"
             result_text.visible = True
             page.update()
             return
-        
+
         route = calculate_route(sender_city.value, receiver_city.value)
         route_str = format_route(route)
-        calc = calculate_shipping_price(w, v, route, delivery_type.value)
-        
-        tracking = add_shipment(
-            sender_name_val,
-            sender_phone_val,
-            sender_address_val,
-            sender_city.value,
-            receiver_name_val,
-            receiver_phone_val,
-            receiver_address_val,
-            receiver_city.value,
-            w, v, p, pp, route_str,
+        calc = calculate_shipping_price(
+            weight_value,
+            volume_value,
+            route,
             delivery_type.value,
-            shipment_note.value or "",
-            calc["distance_km"],
-            calc["desi"],
-            sender_type.value,
-            sender_district.value or "",
-            sender_neighborhood.value or "",
         )
-        
+
+        try:
+            tracking = add_shipment(
+                sender_name_val,
+                sender_phone_val,
+                sender_address_val,
+                sender_city.value,
+                receiver_name_val,
+                receiver_phone_val,
+                receiver_address_val,
+                receiver_city.value,
+                weight_value,
+                volume_value,
+                price_value,
+                payment_value,
+                route_str,
+                delivery_type.value,
+                shipment_note.value or "",
+                calc["distance_km"],
+                calc["desi"],
+                sender_type.value,
+                sender_county.value or "",
+                sender_neighborhood.value or "",
+            )
+        except Exception as exc:
+            result_text.value = f"Kargo kaydi yapilamadi: {exc}"
+            result_text.color = "red"
+            result_text.visible = True
+            page.update()
+            return
+
         party_label = "Gonderici" if sender_type.value == "gonderici" else "Alici"
         result_text.value = (
             f"Kargo kaydedildi!\nTakip No: {tracking}\nKayit Tipi: {party_label}\n"
@@ -282,13 +314,15 @@ def add_shipment_view(page: ft.Page, user: dict = None):
         )
         result_text.color = "green"
         result_text.visible = True
-        
+
         sender_name.value = ""
         sender_phone.value = ""
         sender_address.value = ""
         sender_city.value = None
-        sender_district.value = None
-        sender_district.options = []
+        sender_county.value = None
+        sender_county.options = []
+        sender_bucak.value = None
+        sender_bucak.options = []
         sender_neighborhood.value = None
         sender_neighborhood.options = []
         receiver_name.value = ""
@@ -304,10 +338,22 @@ def add_shipment_view(page: ft.Page, user: dict = None):
         shipment_note.value = ""
         desi_text.value = "Desi: 0"
         distance_text.value = "Mesafe: 0 km"
+        route_preview.value = ""
         route_preview.visible = False
-        
+
         page.update()
-    
+
+    sender_phone.on_change = lambda e: _normalize_phone_fields()
+    receiver_phone.on_change = lambda e: _normalize_phone_fields()
+    sender_name.on_change = lambda e: _validate_sender_name_inline()
+    sender_city.on_change = sender_city_changed
+    sender_county.on_change = sender_county_changed
+    sender_bucak.on_change = sender_bucak_changed
+    receiver_city.on_change = lambda e: update_pricing()
+    delivery_type.on_change = lambda e: update_pricing()
+    weight.on_change = lambda e: update_pricing()
+    volume.on_change = lambda e: update_pricing()
+
     save_button = ft.ElevatedButton(
         content=ft.Text("Kaydet", size=16),
         width=200,
@@ -316,18 +362,13 @@ def add_shipment_view(page: ft.Page, user: dict = None):
         color="white",
         on_click=save_cargo,
     )
-    
-    back_button = ft.ElevatedButton(
-        content=ft.Text("Geri"),
-        on_click=go_back,
-    )
-    
+    back_button = ft.ElevatedButton(content=ft.Text("Geri"), on_click=go_back)
+
     page.add(
         ft.Column(
             [
                 ft.Text("Yeni Kargo Ekle", size=24, weight=ft.FontWeight.BOLD),
                 ft.Container(height=20),
-                
                 ft.Text("GONDERICI BILGILERI", size=16, weight=ft.FontWeight.BOLD, color="gray"),
                 sender_name,
                 sender_name_error,
@@ -335,11 +376,11 @@ def add_shipment_view(page: ft.Page, user: dict = None):
                 sender_phone_error,
                 ft.Text("Sadece rakam girin (10 hane).", size=11, color="gray"),
                 sender_city,
-                sender_district,
+                sender_county,
+                sender_bucak,
                 sender_neighborhood,
                 sender_address,
                 ft.Container(height=20),
-                
                 ft.Text("ALICI BILGILERI", size=16, weight=ft.FontWeight.BOLD, color="gray"),
                 receiver_name,
                 receiver_phone,
@@ -348,12 +389,11 @@ def add_shipment_view(page: ft.Page, user: dict = None):
                 receiver_address,
                 route_preview,
                 ft.Text(
-                    "Guzergah, sehir baglantilarina gore en az aktarma (BFS) ile hesaplanir.",
+                    "Guzergah, sehir baglantilarina gore en az aktarma ile hesaplanir.",
                     size=11,
                     color="gray",
                 ),
                 ft.Container(height=20),
-                
                 ft.Text("KARGO BILGILERI", size=16, weight=ft.FontWeight.BOLD, color="gray"),
                 sender_type,
                 weight,
@@ -365,10 +405,8 @@ def add_shipment_view(page: ft.Page, user: dict = None):
                 delivery_type,
                 shipment_note,
                 ft.Container(height=20),
-                
                 result_text,
                 ft.Container(height=10),
-                
                 save_button,
                 ft.Container(height=10),
                 back_button,

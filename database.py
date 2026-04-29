@@ -82,22 +82,44 @@ def generate_tracking_number():
     return ''.join(random.choice(chars) for _ in range(12))
 
 
-def create_user(username, password, name):
+def _tracking_number_exists(cursor, tracking_number):
+    cursor.execute(
+        "SELECT 1 FROM shipments WHERE tracking_number = ? LIMIT 1",
+        (tracking_number,),
+    )
+    return cursor.fetchone() is not None
+
+
+def create_user(username, password, name, role="personel"):
     password_hash = hashlib.sha256(password.encode()).hexdigest()
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT INTO users (username, password_hash, name) VALUES (?, ?, ?)",
-            (username, password_hash, name)
+            "INSERT INTO users (username, password_hash, name, role) VALUES (?, ?, ?, ?)",
+            (username, password_hash, name, role)
         )
         conn.commit()
         user_id = cursor.lastrowid
-        return {"id": user_id, "username": username, "name": name}
+        return {"id": user_id, "username": username, "name": name, "role": role}
     except sqlite3.IntegrityError:
         return None
     finally:
         conn.close()
+
+
+def ensure_default_admin():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users WHERE username = ?", ("admin",))
+    existing_admin = cursor.fetchone()
+    conn.close()
+
+    if existing_admin:
+        return False
+
+    create_user("admin", "123456", "Yonetici", role="admin")
+    return True
 
 
 def verify_user(username, password):
@@ -116,29 +138,40 @@ def verify_user(username, password):
 
 def add_shipment(sender_name, sender_phone, sender_address, sender_city,
                  receiver_name, receiver_phone, receiver_address, receiver_city,
-                 weight, volume, price, payment_price, route, delivery_type="Adrese Teslim",
-                 shipment_note="", distance_km=0, desi=0, party_type="gonderici",
-                 sender_district="", sender_neighborhood=""):
-    tracking_number = generate_tracking_number()
+                  weight, volume, price, payment_price, route, delivery_type="Adrese Teslim",
+                  shipment_note="", distance_km=0, desi=0, party_type="gonderici",
+                  sender_county="", sender_neighborhood=""):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        """INSERT INTO shipments 
-           (tracking_number, sender_name, sender_phone, sender_address, sender_city,
-            receiver_name, receiver_phone, receiver_address, receiver_city,
-            weight, volume, price, payment_price, status, route, created_date, last_update,
-            delivery_type, shipment_note, distance_km, desi, party_type, sender_district, sender_neighborhood)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (tracking_number, sender_name, sender_phone, sender_address, sender_city,
-         receiver_name, receiver_phone, receiver_address, receiver_city,
-         weight, volume, price, payment_price, "Hazirlaniyor", route, now, now,
-         delivery_type, shipment_note, distance_km, desi, party_type, sender_district, sender_neighborhood)
-    )
-    conn.commit()
-    conn.close()
-    return tracking_number
+    try:
+        tracking_number = None
+        for _ in range(20):
+            candidate = generate_tracking_number()
+            if not _tracking_number_exists(cursor, candidate):
+                tracking_number = candidate
+                break
+
+        if not tracking_number:
+            raise RuntimeError("Benzersiz takip numarasi uretilemedi.")
+
+        cursor.execute(
+            """INSERT INTO shipments 
+               (tracking_number, sender_name, sender_phone, sender_address, sender_city,
+                receiver_name, receiver_phone, receiver_address, receiver_city,
+                weight, volume, price, payment_price, status, route, created_date, last_update,
+                delivery_type, shipment_note, distance_km, desi, party_type, sender_county, sender_neighborhood)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (tracking_number, sender_name, sender_phone, sender_address, sender_city,
+             receiver_name, receiver_phone, receiver_address, receiver_city,
+             weight, volume, price, payment_price, "Hazirlaniyor", route, now, now,
+             delivery_type, shipment_note, distance_km, desi, party_type, sender_county, sender_neighborhood)
+        )
+        conn.commit()
+        return tracking_number
+    finally:
+        conn.close()
 
 
 def get_all_shipments():
