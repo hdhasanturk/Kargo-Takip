@@ -37,20 +37,21 @@ def main(page: ft.Page):
         try:
             route = page.route
             user = getattr(page, "current_user", None)
-            protected_routes = {"/home", "/add-shipment", "/shipment", "/users", "/detail"}
+            protected_routes = {"/home", "/add-shipment", "/users", "/detail"}
             logger.info("Route change: %s", route)
 
             if route == "/" or route == "/login" or route is None:
                 login_view(page)
             elif route in protected_routes and not user:
                 page.go("/login")
+            elif route.startswith("/shipment/") and not user:
+                page.go("/login")
             elif route == "/home":
                 home_view(page, user)
             elif route == "/add-shipment":
                 add_shipment_view(page, user)
-            elif route == "/shipment":
-                query = page.query
-                tracking = query.get("tracking") if query else None
+            elif route.startswith("/shipment/"):
+                tracking = route.split("/shipment/")[-1]
                 if tracking:
                     shipment_detail_view(page, tracking, user)
                 else:
@@ -89,4 +90,4 @@ if __name__ == "__main__":
     setup_logging()
     sys.excepthook = _log_uncaught
     logging.getLogger("app").info("App starting")
-    ft.run(target=main)
+    ft.app(target=main)
