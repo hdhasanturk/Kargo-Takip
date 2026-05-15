@@ -1,123 +1,105 @@
+import logging
+
 import flet as ft
+
 from database import create_user, init_db
 
 
 def register_view(page: ft.Page):
-    page.title = "Kargo Takip - Kayıt Ol"
+    page.title = "Kargo Takip - Kayit Ol"
     page.padding = 50
     page.clean()
     init_db()
-    
+
+    logger = logging.getLogger("app")
+
     username_field = ft.TextField(
-        label="Kullanıcı Adı",
+        label="Kullanici Adi",
         autofocus=True,
         text_align=ft.TextAlign.CENTER,
     )
-    
     password_field = ft.TextField(
-        label="Şifre",
+        label="Sifre",
         password=True,
         text_align=ft.TextAlign.CENTER,
     )
-    
     confirm_password_field = ft.TextField(
-        label="Şifre Tekrar",
+        label="Sifre Tekrar",
         password=True,
         text_align=ft.TextAlign.CENTER,
     )
-    
-    error_text = ft.Text(
-        visible=False,
-        color="red",
-        size=14,
-    )
-    
-    success_text = ft.Text(
-        visible=False,
-        color="green",
-        size=14,
-    )
-    
+
+    error_text = ft.Text(visible=False, color="red", size=14)
+    success_text = ft.Text(visible=False, color="green", size=14)
+
     def handle_register(e):
         username = (username_field.value or "").strip()
         password = password_field.value or ""
         confirm_password = confirm_password_field.value or ""
-        
-        # Alanları kontrol et
+
         if not username or not password or not confirm_password:
-            error_text.value = "Lütfen tüm alanları doldurun."
+            error_text.value = "Lutfen tum alanlari doldurun."
             error_text.visible = True
             success_text.visible = False
             page.update()
             return
-        
-        # Şifre eşleşme kontrolü
+
         if password != confirm_password:
-            error_text.value = "Şifreler eşleşmiyor!"
+            error_text.value = "Sifreler eslesmiyor!"
             error_text.visible = True
             success_text.visible = False
             page.update()
             return
-        
-        # Şifre uzunluk kontrolü
+
         if len(password) < 4:
-            error_text.value = "Şifre en az 4 karakter olmalı."
+            error_text.value = "Sifre en az 4 karakter olmali."
             error_text.visible = True
             success_text.visible = False
             page.update()
             return
-        
-        # Veritabaninda kullanici olustur
+
         try:
             result = create_user(username, password, username)
         except Exception:
+            logger.exception("Register failed: user=%s", username)
             error_text.value = "Kayit sirasinda beklenmeyen bir hata olustu."
             error_text.visible = True
             success_text.visible = False
             page.update()
             return
-        
+
         if result:
-            success_text.value = "Kayıt başarılı! Giriş yapabilirsiniz."
+            logger.info("Register success: user=%s", username)
+            success_text.value = "Kayit basarili! Giris yapabilirsiniz."
             success_text.visible = True
             error_text.visible = False
-            # Alanları temizle
             username_field.value = ""
             password_field.value = ""
             confirm_password_field.value = ""
             page.update()
-        else:
-            error_text.value = "Bu kullanıcı adı zaten var!"
-            error_text.visible = True
-            success_text.visible = False
-            page.update()
-    
-    def go_to_login(e):
-        page.go("/login")
-    
+            return
+
+        logger.warning("Register failed (exists): user=%s", username)
+        error_text.value = "Bu kullanici adi zaten var!"
+        error_text.visible = True
+        success_text.visible = False
+        page.update()
+
     register_button = ft.ElevatedButton(
-        content=ft.Text("Kayıt Ol"),
+        content=ft.Text("Kayit Ol"),
         width=200,
         on_click=handle_register,
     )
-    
     login_link = ft.TextButton(
-        content=ft.Text("Zaten hesabın var mı? Giriş yap"),
-        on_click=go_to_login,
+        content=ft.Text("Zaten hesabin var mi? Giris yap"),
+        on_click=lambda e: page.go("/login"),
     )
-    
+
     page.add(
         ft.Column(
             [
-                ft.Text(
-                    "Kargo Takip",
-                    size=32,
-                    weight=ft.FontWeight.BOLD,
-                ),
-                ft.Text(
-                    "Kayıt Ol",
-                    size=18,
-                ),
+                ft.Text("Kargo Takip", size=32, weight=ft.FontWeight.BOLD),
+                ft.Text("Kayit Ol", size=18),
                 ft.Container(height=30),
                 username_field,
                 password_field,

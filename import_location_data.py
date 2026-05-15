@@ -1,12 +1,14 @@
 import sqlite3
 import os
 
-DB_PATH = "kargo_takip.db"
-JSON_PATH = "turkiye-city-county-district-neighborhood-main/data.json"
+DB_DIR = "data"
+DB_PATH = os.path.join(DB_DIR, "turkiye_locations.db")
+JSON_PATH = os.path.join("turkiye-city-county-district-neighborhood-main", "data.json")
 SQL_CREATE_PATH = os.path.join("sql", "create_location_tables.sql")
 SQL_IMPORT_PATH = os.path.join("sql", "import_location_data.sql")
 
 def get_db_connection():
+    os.makedirs(DB_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -70,6 +72,36 @@ def verify_data():
     print(f"Ilce sayisi: {county_count}")
     print(f"Mahalle/bucak sayisi: {district_count}")
     print(f"Semt/sokak sayisi: {neighborhood_count}")
+
+
+def ensure_location_data():
+    required_tables = {"cities", "counties", "districts", "neighborhoods"}
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        existing_tables = {row[0] for row in cursor.fetchall()}
+
+        if not required_tables.issubset(existing_tables):
+            conn.close()
+            create_location_tables()
+            import_data()
+            return True
+
+        cursor.execute("SELECT COUNT(*) FROM cities")
+        city_count = cursor.fetchone()[0]
+        conn.close()
+
+        if city_count == 0:
+            create_location_tables()
+            import_data()
+            return True
+
+        return False
+    except Exception as exc:
+        print(f"Konum verisi yuklenemedi: {exc}")
+        return False
 
 if __name__ == "__main__":
     print("Tablolar olusturuluyor...")

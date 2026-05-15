@@ -5,7 +5,7 @@ import flet as ft
 from database import delete_shipment, get_all_shipments
 
 
-def home_view(page: ft.Page, user: dict = None):
+def home_view(page: ft.Page, user: dict = None, clear_user=None):
     page.title = "Kargo Takip - Ana Sayfa"
     page.clean()
     page.scroll = ft.ScrollMode.AUTO
@@ -19,7 +19,8 @@ def home_view(page: ft.Page, user: dict = None):
     def logout(e):
         user_label = user.get("username") if isinstance(user, dict) else "-"
         logger.info("Logout: user=%s", user_label)
-        page.current_user = None
+        if clear_user:
+            clear_user(page)
         page.go("/login")
 
     def go_to_add(e):

@@ -29,25 +29,51 @@ def _log_uncaught(exc_type, exc, tb):
     logging.getLogger("app").exception("Unhandled exception", exc_info=(exc_type, exc, tb))
 
 
+_current_user = None
+
+
+def _get_user(page):
+    global _current_user
+    if _current_user:
+        return _current_user
+    _current_user = page.session.get("user")
+    return _current_user
+
+
+def _set_user(page, user):
+    global _current_user
+    _current_user = user
+    page.session.set("user", user)
+
+
+def _clear_user(page):
+    global _current_user
+    _current_user = None
+    page.session.set("user", None)
+
+
 def main(page: ft.Page):
     page.title = "Kargo Takip Sistemi"
     logger = logging.getLogger("app")
-    
+
+    public_routes = {"/", "/login", "/register", "/track"}
+
     def route_change(e):
         try:
             route = page.route
-            user = getattr(page, "current_user", None)
-            protected_routes = {"/home", "/add-shipment", "/users", "/detail"}
+            user = _get_user(page)
             logger.info("Route change: %s", route)
 
             if route == "/" or route == "/login" or route is None:
-                login_view(page)
-            elif route in protected_routes and not user:
-                page.go("/login")
-            elif route.startswith("/shipment/") and not user:
+                login_view(page, _set_user, _clear_user)
+            elif route == "/register":
+                register_view(page)
+            elif route == "/track":
+                tracking_view(page)
+            elif not user:
                 page.go("/login")
             elif route == "/home":
-                home_view(page, user)
+                home_view(page, user, _clear_user)
             elif route == "/add-shipment":
                 add_shipment_view(page, user)
             elif route.startswith("/shipment/"):
@@ -55,7 +81,7 @@ def main(page: ft.Page):
                 if tracking:
                     shipment_detail_view(page, tracking, user)
                 else:
-                    home_view(page, user)
+                    home_view(page, user, _clear_user)
             elif route == "/users":
                 users_view(page, user)
             elif route == "/detail":
@@ -67,23 +93,18 @@ def main(page: ft.Page):
                     shipment_id = int(shipment_id) if shipment_id is not None else None
                 except (TypeError, ValueError):
                     shipment_id = None
-
                 if shipment_id:
                     detail_view(page, shipment_id)
                 else:
-                    home_view(page, user)
-            elif route == "/register":
-                register_view(page)
-            elif route == "/track":
-                tracking_view(page)
+                    home_view(page, user, _clear_user)
             else:
-                login_view(page)
+                page.go("/login")
         except Exception:
             logger.exception("Route handling failed")
-            login_view(page)
-    
+            page.go("/login")
+
     page.on_route_change = route_change
-    login_view(page)
+    login_view(page, _set_user, _clear_user)
 
 
 if __name__ == "__main__":
