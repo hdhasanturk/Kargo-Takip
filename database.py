@@ -51,6 +51,19 @@ def init_db():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS shipment_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            shipment_id INTEGER,
+            tracking_number TEXT NOT NULL,
+            status TEXT NOT NULL,
+            location_city TEXT DEFAULT '',
+            description TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (shipment_id) REFERENCES shipments(id)
+        )
+    ''')
+
     _ensure_shipment_columns(cursor)
 
     conn.commit()
@@ -68,8 +81,15 @@ def _ensure_shipment_columns(cursor):
         "distance_km": "REAL DEFAULT 0",
         "desi": "REAL DEFAULT 0",
         "party_type": "TEXT DEFAULT 'gonderici'",
-        "sender_district": "TEXT DEFAULT ''",
+        "sender_county": "TEXT DEFAULT ''",
         "sender_neighborhood": "TEXT DEFAULT ''",
+        "receiver_county": "TEXT DEFAULT ''",
+        "receiver_neighborhood": "TEXT DEFAULT ''",
+        "courier": "TEXT DEFAULT ''",
+        "real_tracking_number": "TEXT DEFAULT ''",
+        "ship24_tracker_id": "TEXT DEFAULT ''",
+        "parcels_json": "TEXT DEFAULT ''",
+        "estimated_delivery_date": "TEXT DEFAULT ''",
     }
 
     for column_name, column_type in required_columns.items():
@@ -138,9 +158,11 @@ def verify_user(username, password):
 
 def add_shipment(sender_name, sender_phone, sender_address, sender_city,
                  receiver_name, receiver_phone, receiver_address, receiver_city,
+                 receiver_county, receiver_neighborhood,
                   weight, volume, price, payment_price, route, delivery_type="Adrese Teslim",
                   shipment_note="", distance_km=0, desi=0, party_type="gonderici",
-                  sender_county="", sender_neighborhood=""):
+                  sender_county="", sender_neighborhood="", courier="", real_tracking_number="",
+                  ship24_tracker_id="", parcels_json="", estimated_delivery_date=""):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     
     conn = get_db_connection()
@@ -159,16 +181,19 @@ def add_shipment(sender_name, sender_phone, sender_address, sender_city,
         cursor.execute(
             """INSERT INTO shipments 
                (tracking_number, sender_name, sender_phone, sender_address, sender_city,
-                receiver_name, receiver_phone, receiver_address, receiver_city,
+                                receiver_name, receiver_phone, receiver_address, receiver_city, receiver_county, receiver_neighborhood,
                 weight, volume, price, payment_price, status, route, created_date, last_update,
-                delivery_type, shipment_note, distance_km, desi, party_type, sender_county, sender_neighborhood)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                     delivery_type, shipment_note, distance_km, desi, party_type, sender_county, sender_neighborhood,
+                                          courier, real_tracking_number, ship24_tracker_id, parcels_json, estimated_delivery_date)
+                                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (tracking_number, sender_name, sender_phone, sender_address, sender_city,
-             receiver_name, receiver_phone, receiver_address, receiver_city,
-             weight, volume, price, payment_price, "Hazirlaniyor", route, now, now,
-             delivery_type, shipment_note, distance_km, desi, party_type, sender_county, sender_neighborhood)
+                         receiver_name, receiver_phone, receiver_address, receiver_city, receiver_county, receiver_neighborhood,
+                         weight, volume, price, payment_price, "Hazirlaniyor", route, now, now,
+                 delivery_type, shipment_note, distance_km, desi, party_type, sender_county, sender_neighborhood,
+                                 courier, real_tracking_number, ship24_tracker_id, parcels_json, estimated_delivery_date)
         )
         conn.commit()
+        insert_history(tracking_number, "Hazirlaniyor", sender_city, "Kargo kaydi olusturuldu.")
         return tracking_number
     finally:
         conn.close()
@@ -208,6 +233,46 @@ def get_shipment_for_party(tracking_number, party_type, phone):
     return dict(shipment) if shipment else None
 
 
+def get_ship24_tracker_id(tracking_number):
+    if not tracking_number:
+        return None
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT ship24_tracker_id
+           FROM shipments
+           WHERE real_tracking_number = ? OR tracking_number = ?
+           ORDER BY id DESC
+           LIMIT 1""",
+        (tracking_number, tracking_number),
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    tracker_id = row["ship24_tracker_id"]
+    return tracker_id if tracker_id else None
+
+
+def set_ship24_tracker_id(tracking_number, tracker_id):
+    if not tracking_number or not tracker_id:
+        return 0
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """UPDATE shipments
+           SET ship24_tracker_id = ?
+           WHERE real_tracking_number = ? OR tracking_number = ?""",
+        (tracker_id, tracking_number, tracking_number),
+    )
+    conn.commit()
+    updated = cursor.rowcount
+    conn.close()
+    return updated
+
+
 def get_shipment(shipment_id):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -226,17 +291,65 @@ def get_all_users():
     return [dict(u) for u in users]
 
 
+def insert_history(tracking_number, status, location_city="", description=""):
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id FROM shipments WHERE tracking_number = ?",
+        (tracking_number,)
+    )
+    shipment = cursor.fetchone()
+    if not shipment:
+        conn.close()
+        return
+    cursor.execute(
+        "INSERT INTO shipment_history (shipment_id, tracking_number, status, location_city, description, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (shipment["id"], tracking_number, status, location_city, description, now)
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_history(tracking_number):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM shipment_history WHERE tracking_number = ? ORDER BY created_at ASC",
+        (tracking_number,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def update_shipment_location(tracking_number, current_city, status, route):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT status, current_city FROM shipments WHERE tracking_number = ?",
+        (tracking_number,)
+    )
+    old = cursor.fetchone()
+
     cursor.execute(
         "UPDATE shipments SET current_city = ?, status = ?, route = ?, last_update = ? WHERE tracking_number = ?",
         (current_city, status, route, now, tracking_number)
     )
     conn.commit()
     conn.close()
-    
+
+    loc = current_city or "Merkez"
+    desc = {
+        "Hazirlaniyor": "Kargo kaydi olusturuldu.",
+        "Yolda": f"Kargo {loc} bolgesine ulasti.",
+        "Teslim Edildi": f"Kargo {loc}'de teslim edildi.",
+    }.get(status, f"Durum guncellendi: {status}")
+
+    insert_history(tracking_number, status, current_city, desc)
+
     if status == "Teslim Edildi":
         shipment = get_shipment_by_tracking(tracking_number)
         print(f"\n=== BILDIRIM ===")
